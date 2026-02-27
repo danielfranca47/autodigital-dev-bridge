@@ -4,6 +4,7 @@ import re
 
 from bridge.io_utils import atomic_write_text, read_text
 from bridge.models import IngestResult
+from bridge.pr_analyze import PrAnalysisResult
 from bridge.task_manager import ResolvedTask, update_header_metadata
 
 
@@ -108,3 +109,53 @@ def update_notion_report(task: ResolvedTask, result: IngestResult) -> None:
 
 def get_notion_report_content(task: ResolvedTask) -> str:
     return read_text(task.path / "07_relatorio_notion.md")
+
+
+def append_pr_analysis_block(task: ResolvedTask, analysis: PrAnalysisResult) -> None:
+    path = task.path / "07_relatorio_notion.md"
+    existing = read_text(path).rstrip()
+
+    pr_number = analysis.pr_meta.get("number", "?")
+    title = analysis.pr_meta.get("title", "não informado")
+    url = analysis.pr_meta.get("url", "não informado")
+    base_ref = analysis.pr_meta.get("baseRefName", "não informado")
+    head_ref = analysis.pr_meta.get("headRefName", "não informado")
+    repo_line = analysis.repo or "(contexto atual do gh)"
+
+    files_block = "\n".join(f"- {item}" for item in analysis.files) if analysis.files else "- (nenhum arquivo detectado no diff)"
+
+    points: list[str] = []
+    for file_summary in analysis.file_summaries:
+        if file_summary.is_binary:
+            points.append(f"- {file_summary.path}: binário/sem diff textual")
+        for snippet in file_summary.snippets:
+            points.append(f"- {file_summary.path}: {snippet}")
+
+    if not points:
+        points = ["- (sem linhas +/- significativas dentro dos limites configurados)"]
+
+    warning = ""
+    if analysis.diff_was_truncated:
+        warning = f"\n> ⚠️ {analysis.truncated_reason or 'Resumo parcial do diff.'}\n"
+
+    block = [
+        "## Análise de PR",
+        f"- PR: #{pr_number} — {title}",
+        f"- URL: {url}",
+        f"- Base/Head: {base_ref} <- {head_ref}",
+        f"- Stage: {analysis.stage}",
+        f"- Repo: {repo_line}",
+        "",
+        "### Arquivos alterados",
+        files_block,
+        "",
+        "### Pontos-chave do diff (factual)",
+        *points,
+    ]
+
+    content = existing + "\n\n" + "\n".join(block)
+    if warning:
+        content += warning
+
+    atomic_write_text(path, content.rstrip() + "\n")
+    update_header_metadata(path, status="ready")
