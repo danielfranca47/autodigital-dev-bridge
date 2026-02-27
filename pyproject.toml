@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autodigital-dev-bridge"
+version = "0.1.0"
+description = "Offline CLI bridge for task-oriented Codex output ingestion"
+requires-python = ">=3.11"
+
+[project.scripts]
+bridge = "bridge.cli:main"
